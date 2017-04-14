@@ -1,0 +1,6 @@
+[package]
+name = "Coders_Of_The_Caribean"
+version = "0.1.0"
+authors = ["Alexander Kuvaev <alexander@kuvaev.me>"]
+
+[dependencies]
