@@ -42,11 +42,27 @@ struct Barrel {
     tick_accessed: i32,
 }
 
+struct Mine {
+    entity_id: i32,
+    point: Point,
+    tick_accessed: i32,
+}
+
+struct Cannoball {
+    entity_id: i32,
+    owner_id: i32,
+    impact_time: i32,
+    target: Point,
+    tick_accessed: i32,
+}
+
 #[derive(Default)]
 struct Game {
     my_ships: HashMap<i32, Ship>,
     enemy_ships: HashMap<i32, Ship>,
     barrels: HashMap<i32, Barrel>,
+    mines: HashMap<i32, Mine>,
+    cannonballs: HashMap<i32, Cannoball>,
     current_tick: i32,
 }
 
@@ -104,6 +120,44 @@ impl Barrel {
     }
 }
 
+impl Mine {
+    fn new(entity_id: i32, x: i32, y: i32) -> Mine {
+        Mine {
+            entity_id: entity_id,
+            point: Point::new(x, y),
+            tick_accessed: 0,
+        }
+    }
+
+    fn keep_alive(&mut self, current_tick: i32) {
+        self.tick_accessed = current_tick
+    }
+
+    fn is_alive(&self, current_tick: i32) -> bool {
+        current_tick == self.tick_accessed
+    }
+}
+
+impl Cannoball {
+    fn new(entity_id: i32, owner_id: i32, impact_time: i32, x: i32, y: i32) -> Cannoball {
+        Cannoball {           
+            entity_id: entity_id,
+            owner_id: owner_id,
+            impact_time: impact_time,
+            target: Point::new(x, y),
+            tick_accessed: 0,
+        }
+    }
+
+    fn keep_alive(&mut self, current_tick: i32) {
+        self.tick_accessed = current_tick
+    }
+
+    fn is_alive(&self, current_tick: i32) -> bool {
+        current_tick == self.tick_accessed
+    }
+}
+
 impl Game {
     fn init(&mut self) {
         self.current_tick = 0;
@@ -136,6 +190,12 @@ impl Game {
                 },
                 "BARREL" => {
                     self.barrels.insert(entity_id, Barrel::new(entity_id, x, y, arg_1));
+                },
+                "MINE" => {
+                    self.mines.insert(entity_id, Mine::new(entity_id, x, y));
+                },
+                "CANNONBALL" => {
+                    self.cannonballs.insert(entity_id, Cannoball::new(entity_id, arg_1, x, y, arg_2));
                 },
                 _ => unimplemented!(),
             }
@@ -199,6 +259,18 @@ impl Game {
                 },
                 "BARREL" => {
                     self.barrels.get_mut(&entity_id).unwrap().keep_alive(self.current_tick);
+                },
+                "MINE" => {
+                    if !self.mines.contains_key(&entity_id) {
+                        self.mines.insert(entity_id, Mine::new(entity_id, x, y));
+                    }
+                    self.mines.get_mut(&entity_id).unwrap().keep_alive(self.current_tick);
+                },
+                "CANNONBALL" => {
+                    if !self.cannonballs.contains_key(&entity_id) {
+                        self.cannonballs.insert(entity_id, Cannoball::new(entity_id, arg_1, x, y, arg_2));
+                    }
+                    self.cannonballs.get_mut(&entity_id).unwrap().keep_alive(self.current_tick);
                 },
                 _ => unimplemented!(),
             }
