@@ -92,8 +92,14 @@ impl Ship {
         }
     }
 
-    fn keep_alive(&mut self, current_tick: i32) {
-        self.tick_accessed = current_tick
+    fn update(&mut self, current_tick: i32, x: i32, y: i32,
+           rotation: i32, speed: i32, rum: i32) {
+        self.tick_accessed = current_tick;
+        self.point.x = x;
+        self.point.y = y;
+        self.rotation = rotation;
+        self.speed = speed;
+        self.rum = rum;
     }
 
     fn is_alive(&self, current_tick: i32) -> bool {
@@ -252,9 +258,11 @@ impl Game {
             match entity_type.as_ref() {
                 "SHIP" => {
                     if arg_4 == 1 {
-                        self.my_ships.get_mut(&entity_id).unwrap().keep_alive(self.current_tick);
+                        self.my_ships.get_mut(&entity_id).unwrap().
+                            update(self.current_tick, x, y, arg_1, arg_2, arg_3);
                     } else {
-                        self.enemy_ships.get_mut(&entity_id).unwrap().keep_alive(self.current_tick);
+                        self.enemy_ships.get_mut(&entity_id).unwrap().
+                            update(self.current_tick, x, y, arg_1, arg_2, arg_3);
                     }
                 },
                 "BARREL" => {
