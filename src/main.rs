@@ -83,7 +83,13 @@ impl Point {
     }
 
     fn distance(&self, point: &Point) -> i32 {
-        (self.x - point.x).abs() + (self.y - point.y).abs()
+        let x1 = self.x - (self.y - (self.y & 1)) / 2;
+        let z1 = self.y;
+        let y1 = -(x1 + z1);     
+        let x2 = point.x - (point.y - (point.y & 1)) / 2;
+        let z2 = point.y;
+        let y2 = -(x2 + z2);
+        ((x1 - x2).abs() + (y1 - y2).abs() + (z1 - z2).abs()) / 2
     }
 
     fn get_neighbour(&self, rotation: i32) -> Point {
@@ -438,7 +444,7 @@ impl Game {
                 let enemy_ship = self.enemy_ships.get(&enemy_id).unwrap();
                 let point = enemy_ship.point.get_offset(enemy_ship.rotation, enemy_ship.speed);
                 let distance = ship.point.distance(&point);
-                if distance < 7 {                  
+                if distance < 6 {                  
                     action = Action::FIRE(point.x, point.y);
                 } else {
                     action = ship.move_to(&point);     
