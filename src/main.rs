@@ -1,7 +1,8 @@
 use std::io;
 use std::vec::Vec;
 use std::collections::HashMap;
-use std::num;
+use std::f64;
+use std::f64::consts;
 
 macro_rules! print_err {
     ($($arg:tt)*) => (
@@ -16,11 +17,18 @@ macro_rules! parse_input {
     ($x:expr, $t:ident) => ($x.trim().parse::<$t>().unwrap())
 }
 
-enum EntityType {
-    Ship,
-    Barrel,
+#[derive(PartialEq, Eq)]
+enum Action {
+    WAIT,
+    FASTER, 
+    SLOWER, 
+    PORT, 
+    STARBOARD, 
+    FIRE(i32, i32), 
+    MINE,
 }
 
+#[derive(PartialEq, Eq, Clone, Copy)]
 struct Point {
     x: i32,
     y: i32,
@@ -77,6 +85,93 @@ impl Point {
     fn distance(&self, point: &Point) -> i32 {
         (self.x - point.x).abs() + (self.y - point.y).abs()
     }
+
+    fn get_neighbour(&self, rotation: i32) -> Point {
+       let mut point = match rotation {
+            0 => {
+                Point {x:self.x + 1, y:self.y}
+            },
+            1 => {
+                let dx = if self.x%2 == 0 {0} else {1};
+                Point {x:self.x + dx, y:self.y - 1}
+            },
+            2 => {
+                let dx = if self.x%2 == 0 {1} else {0};
+                Point {x:self.x - dx, y:self.y - 1}
+            },
+            3 => {
+                Point {x:self.x - 1, y:self.y}
+            },
+            4 => {
+                let dx = if self.x%2 == 0 {1} else {0};
+                Point {x:self.x - dx, y:self.y + 1}
+            },
+            5 => {
+                let dx = if self.x%2 == 0 {0} else {1};
+                Point {x:self.x + dx, y:self.y + 1}
+            },
+            _ => unimplemented!(),
+        };
+        if point.x < 0 {
+            point.x = 0;
+        } else if point.x > 22 {
+            point.x = 22;
+        }
+        if point.y < 0 {
+            point.y = 0;
+        } else if point.y > 20 {
+            point.y = 20;
+        }
+        point 
+    }
+
+    fn get_offset(&self, rotation: i32, speed: i32) -> Point {
+        let mut point = match rotation {
+            0 => {
+                Point {x:self.x + 2*speed, y:self.y}
+            },
+            1 => {
+                Point {x:self.x + speed, y:self.y - 2*speed}
+            },
+            2 => {
+                Point {x:self.x - speed, y:self.y - 2*speed}
+            },
+            3 => {
+                Point {x:self.x - 2*speed, y:self.y}
+            },
+            4 => {
+                Point {x:self.x - speed, y:self.y + 2*speed}
+            },
+            5 => {
+                Point {x:self.x + speed, y:self.y + 2*speed}
+            },
+            _ => unimplemented!(),
+        };
+        if point.x < 0 {
+            point.x = 0;
+        } else if point.x > 22 {
+            point.x = 22;
+        }
+        if point.y < 0 {
+            point.y = 0;
+        } else if point.y > 20 {
+            point.y = 20;
+        }
+        point
+    }
+
+    fn angle(&self, target: &Point) -> f64 {
+        let dy = ((target.y - self.y) as f64) * f64::sqrt(3f64) / 2f64;
+        let dx = (target.x - self.x) as f64 + (((self.y - target.y) & 1) as f64) * 0.5f64;
+        let mut angle = -f64::atan2(dy, dx) * 3f64 / consts::PI;
+        if angle < 0f64 {
+            angle = angle + 6f64;
+        } else if angle >= 6f64 {
+            angle = angle - 6f64;
+        }
+        angle
+    }
+
 }
 
 impl Ship {
@@ -100,6 +195,97 @@ impl Ship {
         self.rotation = rotation;
         self.speed = speed;
         self.rum = rum;
+    }
+
+    fn move_to(&self, point: &Point) -> Action {
+        let mut action = Action::WAIT;
+        let target = *point;
+        if target == self.point {
+            return Action::SLOWER;
+        }
+
+        if self.speed > 0 {
+            let position = self.point.get_neighbour(self.rotation);
+            if position == self.point {
+                return Action::SLOWER;
+            }
+            if position == target {
+                return Action::WAIT;
+            }
+            let rotation = self.rotation as f64;
+            let target_angle = position.angle(&target);
+            let angle_straight = f64::min((rotation - target_angle).abs(), 6f64 - (rotation  - target_angle).abs());
+            let angle_port = f64::min(((rotation + 1f64) - target_angle).abs(), ((rotation - 5f64) - target_angle).abs());
+            let angle_starboard = f64::min(((rotation + 5f64) - target_angle).abs(), ((rotation - 1f64) - target_angle).abs());
+
+            let center_angle = position.angle(&Point {x:11, y:10});
+            let angle_port_center = f64::min(((rotation + 1f64) - center_angle).abs(), ((rotation - 5f64) - center_angle).abs());
+            let angle_starboard_center = f64::min(((rotation + 5f64) - center_angle).abs(), ((rotation - 1f64) - center_angle).abs());
+
+            if (position.distance(&target) == 1) && (angle_straight > 1.5f64) {
+                return Action::SLOWER;
+            }
+
+            let mut min_distance = 1000;
+            {
+                let next_position = position.get_neighbour(self.rotation);
+                if next_position != position {
+                    min_distance = next_position.distance(&target);
+                    action = Action::WAIT;
+                }
+            }
+            {
+                let next_position = position.get_neighbour((self.rotation + 1) % 6);
+                if next_position != position {
+                    let distance = next_position.distance(&target);
+                    if (distance < min_distance) || (distance == min_distance) && (angle_port < angle_straight - 0.5f64) {
+                        min_distance = distance;
+                        action = Action::PORT;
+                    }
+                }
+            }
+            {
+                let next_position = position.get_neighbour((self.rotation + 5) % 6);
+                if next_position != position {
+                    let distance = next_position.distance(&target);
+                    if (distance < min_distance)
+                        || (distance == min_distance && angle_starboard < angle_port - 0.5 && action == Action::PORT)
+                        || (distance == min_distance && angle_starboard < angle_straight - 0.5 && action == Action::WAIT)
+                        || (distance == min_distance && action == Action::PORT && angle_starboard == angle_port
+                            && angle_starboard_center < angle_port_center)
+                        || (distance == min_distance && action == Action::PORT && angle_starboard == angle_port
+                            && angle_starboard_center == angle_port_center && (self.rotation == 1 || self.rotation == 4)) {
+                        action = Action::STARBOARD;
+                    }
+                }
+            }
+        } else {
+            let rotation = self.rotation as f64;
+            let target_angle = self.point.angle(&target);
+            let angle_straight = f64::min((rotation - target_angle).abs(), 6f64 - (rotation  - target_angle).abs());
+            let angle_port = f64::min(((rotation + 1f64) - target_angle).abs(), ((rotation - 5f64) - target_angle).abs());
+            let angle_starboard = f64::min(((rotation + 5f64) - target_angle).abs(), ((rotation - 1f64) - target_angle).abs());
+
+            let center_angle = self.point.angle(&Point {x:11, y:10});
+            let angle_port_center = f64::min(((rotation + 1f64) - center_angle).abs(), ((rotation - 5f64) - center_angle).abs());
+            let angle_starboard_center = f64::min(((rotation + 5f64) - center_angle).abs(), ((rotation - 1f64) - center_angle).abs());
+
+            let forward_position = self.point.get_neighbour(self.rotation);
+
+            if angle_port <= angle_starboard {
+                action = Action::PORT;
+            }
+
+            if ((angle_starboard < angle_port) || (angle_starboard == angle_port) && (angle_starboard_center < angle_port_center))
+                    || ((angle_starboard == angle_port) && (angle_starboard_center == angle_port_center) && (self.rotation == 1 || self.rotation == 4)) {
+                action = Action::STARBOARD;
+            }
+
+            if (forward_position != self.point) && (angle_straight <= angle_port) && (angle_straight <= angle_starboard) {
+                action = Action::FASTER;
+            }
+        }
+        action
     }
 
     fn is_alive(&self, current_tick: i32) -> bool {
@@ -169,7 +355,7 @@ impl Game {
         self.current_tick = 0;
         let mut input_line = String::new();
         io::stdin().read_line(&mut input_line).unwrap();
-        let my_ship_count = parse_input!(input_line, i32); // the number of remaining ships
+        let _ = parse_input!(input_line, i32); // the number of remaining ships
         let mut input_line = String::new();
         io::stdin().read_line(&mut input_line).unwrap();
         let entity_count = parse_input!(input_line, i32); // the number of entities (e.g. ships, mines or cannonballs)
@@ -209,13 +395,29 @@ impl Game {
         self.do_next_turn();
     }
 
+    fn get_target(&self, ship: &Point) -> i32 {  
+        let mut min_distance = 1000;
+        let mut enemy_id: i32 = -1;
+        for enemy_ship in self.enemy_ships.values() {
+            if !enemy_ship.is_alive(self.current_tick) {
+                continue;
+            }
+            let d = ship.distance(&enemy_ship.point);
+            if d < min_distance {
+                min_distance = d;
+                enemy_id = enemy_ship.entity_id;
+            }
+        }
+        enemy_id
+    }
+
     fn do_next_turn(&self) {
         for ship in self.my_ships.values() {
             if !ship.is_alive(self.current_tick) {
                 continue;
             }
             let mut min_distance = 1000;
-            let mut min_entity_id: i32 = -1;
+            let mut barrel_id: i32 = -1;
             for barrel in self.barrels.values() {
                 if !barrel.is_alive(self.current_tick) {
                     continue;
@@ -223,14 +425,33 @@ impl Game {
                 let d = ship.point.distance(&barrel.point);
                 if d < min_distance {
                     min_distance = d;
-                    min_entity_id = barrel.entity_id;
+                    barrel_id = barrel.entity_id;
                 }
             }
-            if min_entity_id < 0 {
-                println!("WAIT");
-            } else {
-                let barel = self.barrels.get(&min_entity_id).unwrap();
-                println!("MOVE {} {}", barel.point.x, barel.point.y);
+            let enemy_id = self.get_target(&ship.point);
+            let mut action = Action::WAIT;
+            if (ship.rum < 60) && (barrel_id >= 0) {
+                let barel = self.barrels.get(&barrel_id).unwrap();
+                action = ship.move_to(&barel.point);
+            } 
+            if action == Action::WAIT {
+                let enemy_ship = self.enemy_ships.get(&enemy_id).unwrap();
+                let point = enemy_ship.point.get_offset(enemy_ship.rotation, enemy_ship.speed);
+                let distance = ship.point.distance(&point);
+                if distance < 7 {                  
+                    action = Action::FIRE(point.x, point.y);
+                } else {
+                    action = ship.move_to(&point);     
+                }        
+            }
+            match action {
+                Action::WAIT => {println!("WAIT")},
+                Action::PORT => {println!("PORT")},
+                Action::STARBOARD => {println!("STARBOARD")},
+                Action::SLOWER => {println!("SLOWER")},
+                Action::FASTER => {println!("FASTER")},
+                Action::FIRE(x, y) => {println!("FIRE {} {}", x, y)},
+                Action::MINE => {println!("MINE")},
             }
         }
     }
@@ -239,7 +460,7 @@ impl Game {
         self.current_tick += 1;
         let mut input_line = String::new();
         io::stdin().read_line(&mut input_line).unwrap();
-        let my_ship_count = parse_input!(input_line, i32); // the number of remaining ships
+        let _ = parse_input!(input_line, i32); // the number of remaining ships
         let mut input_line = String::new();
         io::stdin().read_line(&mut input_line).unwrap();
         let entity_count = parse_input!(input_line, i32); // the number of entities (e.g. ships, mines or cannonballs)
@@ -266,6 +487,9 @@ impl Game {
                     }
                 },
                 "BARREL" => {
+                    if !self.barrels.contains_key(&entity_id) {
+                        self.barrels.insert(entity_id, Barrel::new(entity_id, x, y, arg_1));
+                    }
                     self.barrels.get_mut(&entity_id).unwrap().keep_alive(self.current_tick);
                 },
                 "MINE" => {
