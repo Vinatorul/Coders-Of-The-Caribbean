@@ -428,14 +428,14 @@ impl Game {
             if !ship.is_alive(self.current_tick) {
                 continue;
             }
-            let mut min_distance = 1000;
+            let mut min_distance = -1;
             let mut barrel_id: i32 = -1;
             for barrel in self.barrels.values() {
                 if !barrel.is_alive(self.current_tick) {
                     continue;
                 }
                 let d = ship.point.distance(&barrel.point);
-                if d < min_distance {
+                if d > min_distance {
                     min_distance = d;
                     barrel_id = barrel.entity_id;
                 }
@@ -447,12 +447,13 @@ impl Game {
                 print_err!("MOVE HEAL {} {}", barel.point.x, barel.point.y);
                 action = ship.move_to(&barel.point);
             } 
-            if action == Action::WAIT {
+            if (action == Action::WAIT) || (action == Action::SLOWER) {
                 let enemy_ship = self.enemy_ships.get(&enemy_id).unwrap();
                 let point = enemy_ship.point.get_offset(enemy_ship.rotation, enemy_ship.speed);
                 let distance = ship.point.distance(&point);
                 if distance < 5 {
-                    if (distance < 2) || ((ship.speed == 0) && (enemy_ship.speed != 0)) {
+                    let d = ship.point.distance(&enemy_ship.point);
+                    if (d < 2) || ((ship.speed == 0) && (enemy_ship.speed != 0)) {
                         if barrel_id >= 0 {
                             let barel = self.barrels.get(&barrel_id).unwrap();
                             print_err!("MOVE BARREL {} {}", barel.point.x, barel.point.y);
