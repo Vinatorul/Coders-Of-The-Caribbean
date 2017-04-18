@@ -452,7 +452,7 @@ impl Game {
                 let point = enemy_ship.point.get_offset(enemy_ship.rotation, enemy_ship.speed);
                 let distance = ship.point.distance(&point);
                 if distance < 5 {
-                    if (distance < 2) || (ship.speed == 0) {
+                    if (distance < 2) || ((ship.speed == 0) && (enemy_ship.speed != 0)) {
                         if barrel_id >= 0 {
                             let barel = self.barrels.get(&barrel_id).unwrap();
                             print_err!("MOVE BARREL {} {}", barel.point.x, barel.point.y);
