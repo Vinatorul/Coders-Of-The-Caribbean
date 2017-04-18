@@ -41,6 +41,7 @@ struct Ship {
     speed: i32,
     rum: i32,
     tick_accessed: i32,
+    cd: i32,
 }
 
 struct Barrel {
@@ -137,26 +138,26 @@ impl Point {
     fn get_offset(&self, rotation: i32, speed: i32) -> Point {
         let mut point = match rotation {
             0 => {
-                Point {x:self.x + 3*speed, y:self.y}
+                Point {x:self.x + speed, y:self.y}
             },
             1 => {
-                let dx = if self.y%2 == 0 {0} else {speed};
-                Point {x:self.x + speed + dx, y:self.y - 3*speed}
+                let dx = if (self.y%2 == 0) || (speed%2 == 0) {0} else {speed};
+                Point {x:self.x + speed/2 + dx, y:self.y - speed}
             },
             2 => {
-                let dx = if self.y%2 == 0 {speed} else {0};
-                Point {x:self.x - speed - dx, y:self.y - 3*speed}
+                let dx = if (self.y%2 == 0) && (speed%2 == 1) {speed} else {0};
+                Point {x:self.x - speed/2 - dx, y:self.y - speed}
             },
             3 => {
-                Point {x:self.x - 3*speed, y:self.y}
+                Point {x:self.x - speed/2, y:self.y}
             },
             4 => {
-                let dx = if self.y%2 == 0 {speed} else {0};
-                Point {x:self.x - speed - dx, y:self.y + 3*speed}
+                let dx = if (self.y%2 == 0) && (speed%2 == 1) {speed} else {0};
+                Point {x:self.x - speed/2 - dx, y:self.y + speed}
             },
             5 => {
-                let dx = if self.y%2 == 0 {0} else {speed};
-                Point {x:self.x + speed + dx, y:self.y + 3*speed}
+                let dx = if (self.y%2 == 0) || (speed%2 == 0)  {0} else {speed};
+                Point {x:self.x + speed/2 + dx, y:self.y + speed}
             },
             _ => unimplemented!(),
         };
@@ -197,6 +198,7 @@ impl Ship {
             speed: speed,
             rum: rum,
             tick_accessed: 0,
+            cd: 0,
         }
     }
 
@@ -208,9 +210,16 @@ impl Ship {
         self.rotation = rotation;
         self.speed = speed;
         self.rum = rum;
+        if self.cd > 0 {
+            self.cd = self.cd - 1;
+        }
     }
 
-    fn move_to(&self, point: &Point) -> Action {
+    fn set_cd(&mut self, cd: i32) {
+        self.cd = cd
+    }
+
+    fn move_to(&self, point: &Point, under_fire: &HashSet<Point>) -> Action {
         let mut action = Action::WAIT;
         let target = *point;
         if target == self.point {
@@ -243,14 +252,14 @@ impl Ship {
             let mut min_distance = 1000;
             {
                 let next_position = position.get_neighbour(self.rotation);
-                if next_position != position {
+                if (next_position != position) && (!under_fire.contains(&next_position)) {
                     min_distance = next_position.distance(&target);
                     action = Action::WAIT;
                 }
             }
             {
                 let next_position = position.get_neighbour((self.rotation + 1) % 6);
-                if next_position != position {
+                if (next_position != position) && (!under_fire.contains(&next_position)) {
                     let distance = next_position.distance(&target);
                     if (distance < min_distance) || (distance == min_distance) && (angle_port <= angle_straight) {
                         min_distance = distance;
@@ -260,7 +269,7 @@ impl Ship {
             }
             {
                 let next_position = position.get_neighbour((self.rotation + 5) % 6);
-                if next_position != position {
+                if (next_position != position) && (!under_fire.contains(&next_position)) {
                     let distance = next_position.distance(&target);
                     if (distance <= min_distance)
                         || ((distance == min_distance) && (angle_starboard <= angle_port) && (action == Action::PORT))
@@ -270,12 +279,13 @@ impl Ship {
                         || ((distance == min_distance) && (action == Action::PORT) && (angle_starboard == angle_port)
                             && (angle_starboard_center == angle_port_center) && (self.rotation == 1 || self.rotation == 4)) {
                         action = Action::STARBOARD;
+                        min_distance = distance;
                     }
                 }
             }
-            // if (action == Action::WAIT) && (self.speed < 2) {
-            //     action = Action::FASTER;
-            // }
+            if (min_distance == 1000) {
+                action = Action::SLOWER;
+            }
         } else {
             let rotation = self.rotation as f64;
             let target_angle = self.point.angle(&target);
@@ -472,72 +482,68 @@ impl Game {
         enemy_id
     }
 
-    fn do_next_turn(&self) {
+    fn do_next_turn(&mut self){
         for key in self.my_ships_ids.iter() {
-            let ship = self.my_ships.get(&key).unwrap();
-            if !ship.is_alive(self.current_tick) {
-                continue;
-            }
-            let mut min_distance = 1000;
-            let mut barrel_id: i32 = -1;
-            for barrel in self.barrels.values() {
-                if !barrel.is_alive(self.current_tick) {
+            let mut action = Action::WAIT;
+            {
+                let ship = self.my_ships.get(&key).unwrap();
+                if !ship.is_alive(self.current_tick) {
                     continue;
                 }
-                let d = ship.point.distance(&barrel.point);
-                if d < min_distance {
-                    min_distance = d;
-                    barrel_id = barrel.entity_id;
+                let mut min_distance = 1000;
+                let mut barrel_id: i32 = -1;
+                for barrel in self.barrels.values() {
+                    if !barrel.is_alive(self.current_tick) {
+                        continue;
+                    }
+                    let d = ship.point.distance(&barrel.point);
+                    if d < min_distance {
+                        min_distance = d;
+                        barrel_id = barrel.entity_id;
+                    }
                 }
-            }
-            let enemy_id = self.get_target(&ship.point);
-            let mine_id = self.get_mine(&ship.point);
-            let mut action = Action::WAIT;
-            
-            // if (action == Action::WAIT) || (action == Action::SLOWER) {
+                let enemy_id = self.get_target(&ship.point);
+                let mine_id = self.get_mine(&ship.point);
+                let enemy_d = ship.point.distance(&ship.point);
+                
                 let enemy_ship = self.enemy_ships.get(&enemy_id).unwrap();
-                let point = enemy_ship.point.get_offset(enemy_ship.rotation, if enemy_ship.speed > 0 {1} else {0});
-                let distance = ship.point.distance(&point);
-                if distance < 5  {
-                    // let d = ship.point.distance(&enemy_ship.point);
-                    // if (d < 2) || ((ship.speed == 0) && (enemy_ship.speed != 0)) {
-                    //     if barrel_id >= 0 {
-                    //         let barel = self.barrels.get(&barrel_id).unwrap();
-                    //         print_err!("MOVE BARREL {} {}", barel.point.x, barel.point.y);
-                    //         action = ship.move_to(&barel.point);
-                    //     } else {
-                    //         let tmp = Point {x: 2*ship.point.x- enemy_ship.point.x, y: 2*ship.point.y - enemy_ship.point.y};
-                    //         print_err!("MOVE AWAY {} {}", tmp.x, tmp.y);
-                    //         action = ship.move_to(&tmp);
-                    //     }
-                    //     ship.move_to(&point);
-                    // } else {
+                let offset = if enemy_ship.speed == 0 {0} else {1 + (enemy_d) / 3};
+                let point = enemy_ship.point.get_offset(enemy_ship.rotation, offset);
+                if ship.cd == 0 {
+                    let distance = ship.point.distance(&point);
+                    if distance < 8  {
                         action = Action::FIRE(point.x, point.y);
-                    // }
-                } else if mine_id > 0  {
-                    let mine = self.mines.get(&mine_id).unwrap();
-                    let mine_d = ship.point.distance(&mine.point);
-                    if mine_d < 5 {
-                        action = Action::FIRE(mine.point.x, mine.point.y)
-                    }   
+                    } else if mine_id > 0  {
+                        let mine = self.mines.get(&mine_id).unwrap();
+                        let mine_d = ship.point.distance(&mine.point);
+                        if (mine_d < 6) && (mine_d > 2) {
+                            action = Action::FIRE(mine.point.x, mine.point.y)
+                        }   
+                    }
                 } 
+                if (action == Action::WAIT) && self.under_fire.contains(&ship.point) && (ship.speed == 0) {
+                    action = Action::FASTER;
+                }
                 if (action == Action::WAIT) && (barrel_id >= 0) {
                     let barel = self.barrels.get(&barrel_id).unwrap();
                     print_err!("MOVE HEAL {} {}", barel.point.x, barel.point.y);
-                    action = ship.move_to(&barel.point);
+                    action = ship.move_to(&barel.point, &self.under_fire);
                 }  
                 else if action == Action::WAIT {
                     print_err!("MOVE ATTACK {} {}", point.x, point.y);
-                    action = ship.move_to(&point);     
-                }    
-            // }
+                    action = ship.move_to(&point, &self.under_fire);     
+                }
+            }   
             match action {
                 Action::WAIT => {println!("WAIT")},
                 Action::PORT => {println!("PORT")},
                 Action::STARBOARD => {println!("STARBOARD")},
                 Action::SLOWER => {println!("WAIT")},
                 Action::FASTER => {println!("FASTER")},
-                Action::FIRE(x, y) => {println!("FIRE {} {}", x, y)},
+                Action::FIRE(x, y) => {             
+                    self.my_ships.get_mut(&key).unwrap().set_cd(2);
+                    println!("FIRE {} {}", x, y)
+                },
                 Action::MINE => {println!("MINE")},
             }
         }
