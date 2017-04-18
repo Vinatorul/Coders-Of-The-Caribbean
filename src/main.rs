@@ -140,22 +140,22 @@ impl Point {
                 Point {x:self.x + 3*speed, y:self.y}
             },
             1 => {
-                let dx = if self.y%2 == 0 {0} else {1};
+                let dx = if self.y%2 == 0 {0} else {speed};
                 Point {x:self.x + speed + dx, y:self.y - 3*speed}
             },
             2 => {
-                let dx = if self.y%2 == 0 {1} else {0};
+                let dx = if self.y%2 == 0 {speed} else {0};
                 Point {x:self.x - speed - dx, y:self.y - 3*speed}
             },
             3 => {
                 Point {x:self.x - 3*speed, y:self.y}
             },
             4 => {
-                let dx = if self.y%2 == 0 {1} else {0};
+                let dx = if self.y%2 == 0 {speed} else {0};
                 Point {x:self.x - speed - dx, y:self.y + 3*speed}
             },
             5 => {
-                let dx = if self.y%2 == 0 {0} else {1};
+                let dx = if self.y%2 == 0 {0} else {speed};
                 Point {x:self.x + speed + dx, y:self.y + 3*speed}
             },
             _ => unimplemented!(),
@@ -496,7 +496,7 @@ impl Game {
             
             // if (action == Action::WAIT) || (action == Action::SLOWER) {
                 let enemy_ship = self.enemy_ships.get(&enemy_id).unwrap();
-                let point = enemy_ship.point.get_offset(enemy_ship.rotation, enemy_ship.speed);
+                let point = enemy_ship.point.get_offset(enemy_ship.rotation, if enemy_ship.speed > 0 {1} else {0});
                 let distance = ship.point.distance(&point);
                 if distance < 5  {
                     // let d = ship.point.distance(&enemy_ship.point);
