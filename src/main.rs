@@ -496,7 +496,7 @@ impl Game {
             
             // if (action == Action::WAIT) || (action == Action::SLOWER) {
                 let enemy_ship = self.enemy_ships.get(&enemy_id).unwrap();
-                let point = enemy_ship.point.get_offset(enemy_ship.rotation, 1);
+                let point = enemy_ship.point.get_offset(enemy_ship.rotation, enemy_ship.speed);
                 let distance = ship.point.distance(&point);
                 if distance < 5  {
                     // let d = ship.point.distance(&enemy_ship.point);
