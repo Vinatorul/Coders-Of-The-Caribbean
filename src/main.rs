@@ -67,6 +67,7 @@ struct Cannoball {
 #[derive(Default)]
 struct Game {
     my_ships: HashMap<i32, Ship>,
+    my_ships_ids: Vec<i32>,
     enemy_ships: HashMap<i32, Ship>,
     barrels: HashMap<i32, Barrel>,
     mines: HashMap<i32, Mine>,
@@ -290,7 +291,6 @@ impl Ship {
                 action = Action::STARBOARD;
             }
 
-            print_err!("angles {} {} {} {} {}", target_angle, rotation, angle_straight, angle_port, angle_starboard);
             if (forward_position != self.point) && (angle_straight <= angle_port) && (angle_straight <= angle_starboard) {
                 action = Action::FASTER;
             }
@@ -386,6 +386,7 @@ impl Game {
                     let ship = Ship::new(entity_id, x, y, arg_1, arg_2, arg_3);
                     if arg_4 == 1 {
                         self.my_ships.insert(entity_id, ship);
+                        self.my_ships_ids.push(entity_id);
                     } else {
                         self.enemy_ships.insert(entity_id, ship);
                     }
@@ -422,7 +423,7 @@ impl Game {
     }
 
     fn do_next_turn(&self) {
-        for key in self.my_ships.keys().sort() {
+        for key in self.my_ships_ids.iter() {
             let ship = self.my_ships.get(&key).unwrap();
             if !ship.is_alive(self.current_tick) {
                 continue;
@@ -450,8 +451,21 @@ impl Game {
                 let enemy_ship = self.enemy_ships.get(&enemy_id).unwrap();
                 let point = enemy_ship.point.get_offset(enemy_ship.rotation, enemy_ship.speed);
                 let distance = ship.point.distance(&point);
-                if distance < 5 {                  
-                    action = Action::FIRE(point.x, point.y);
+                if distance < 5 {
+                    if (distance < 2) || (ship.speed == 0) {
+                        if barrel_id >= 0 {
+                            let barel = self.barrels.get(&barrel_id).unwrap();
+                            print_err!("MOVE BARREL {} {}", barel.point.x, barel.point.y);
+                            action = ship.move_to(&barel.point);
+                        } else {
+                            let tmp = Point {x: 2*ship.point.x- enemy_ship.point.x, y: 2*ship.point.y - enemy_ship.point.y};
+                            print_err!("MOVE AWAY {} {}", tmp.x, tmp.y);
+                            action = ship.move_to(&tmp);
+                        }
+                        ship.move_to(&point);
+                    } else {
+                        action = Action::FIRE(point.x, point.y);
+                    }
                 } else {
                     print_err!("MOVE ATTACK {} {}", point.x, point.y);
                     action = ship.move_to(&point);     
@@ -461,7 +475,7 @@ impl Game {
                 Action::WAIT => {println!("MINE")},
                 Action::PORT => {println!("PORT")},
                 Action::STARBOARD => {println!("STARBOARD")},
-                Action::SLOWER => {println!("SLOWER")},
+                Action::SLOWER => {println!("WAIT")},
                 Action::FASTER => {println!("FASTER")},
                 Action::FIRE(x, y) => {println!("FIRE {} {}", x, y)},
                 Action::MINE => {println!("MINE")},
