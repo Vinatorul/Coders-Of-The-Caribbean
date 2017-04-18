@@ -422,7 +422,8 @@ impl Game {
     }
 
     fn do_next_turn(&self) {
-        for ship in self.my_ships.values() {
+        for key in self.my_ships.keys().sort() {
+            let ship = self.my_ships.get(&key).unwrap();
             if !ship.is_alive(self.current_tick) {
                 continue;
             }
