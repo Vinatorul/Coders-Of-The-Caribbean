@@ -255,16 +255,19 @@ impl Ship {
                 if next_position != position {
                     let distance = next_position.distance(&target);
                     if (distance < min_distance)
-                        || (distance == min_distance && angle_starboard < angle_port - 0.5 && action == Action::PORT)
-                        || (distance == min_distance && angle_starboard < angle_straight - 0.5 && action == Action::WAIT)
-                        || (distance == min_distance && action == Action::PORT && angle_starboard == angle_port
-                            && angle_starboard_center < angle_port_center)
-                        || (distance == min_distance && action == Action::PORT && angle_starboard == angle_port
-                            && angle_starboard_center == angle_port_center && (self.rotation == 1 || self.rotation == 4)) {
+                        || ((distance == min_distance) && (angle_starboard < angle_port - 0.5) && (action == Action::PORT))
+                        || ((distance == min_distance) && (angle_starboard < angle_straight - 0.5) && (action == Action::WAIT))
+                        || ((distance == min_distance) && (action == Action::PORT) && (angle_starboard == angle_port)
+                            && (angle_starboard_center < angle_port_center))
+                        || ((distance == min_distance) && (action == Action::PORT) && (angle_starboard == angle_port)
+                            && (angle_starboard_center == angle_port_center) && (self.rotation == 1 || self.rotation == 4)) {
                         action = Action::STARBOARD;
                     }
                 }
             }
+            // if (action == Action::WAIT) && (self.speed < 2) {
+            //     action = Action::FASTER;
+            // }
         } else {
             let rotation = self.rotation as f64;
             let target_angle = self.point.angle(&target);
@@ -282,11 +285,12 @@ impl Ship {
                 action = Action::PORT;
             }
 
-            if ((angle_starboard < angle_port) || (angle_starboard == angle_port) && (angle_starboard_center < angle_port_center))
+            if (angle_starboard < angle_port) || ((angle_starboard == angle_port) && (angle_starboard_center < angle_port_center))
                     || ((angle_starboard == angle_port) && (angle_starboard_center == angle_port_center) && (self.rotation == 1 || self.rotation == 4)) {
                 action = Action::STARBOARD;
             }
 
+            print_err!("angles {} {} {} {} {}", target_angle, rotation, angle_straight, angle_port, angle_starboard);
             if (forward_position != self.point) && (angle_straight <= angle_port) && (angle_straight <= angle_starboard) {
                 action = Action::FASTER;
             }
@@ -438,20 +442,22 @@ impl Game {
             let mut action = Action::WAIT;
             if (ship.rum < 60) && (barrel_id >= 0) {
                 let barel = self.barrels.get(&barrel_id).unwrap();
+                print_err!("MOVE HEAL {} {}", barel.point.x, barel.point.y);
                 action = ship.move_to(&barel.point);
             } 
             if action == Action::WAIT {
                 let enemy_ship = self.enemy_ships.get(&enemy_id).unwrap();
                 let point = enemy_ship.point.get_offset(enemy_ship.rotation, enemy_ship.speed);
                 let distance = ship.point.distance(&point);
-                if distance < 6 {                  
+                if distance < 5 {                  
                     action = Action::FIRE(point.x, point.y);
                 } else {
+                    print_err!("MOVE ATTACK {} {}", point.x, point.y);
                     action = ship.move_to(&point);     
                 }        
             }
             match action {
-                Action::WAIT => {println!("WAIT")},
+                Action::WAIT => {println!("MINE")},
                 Action::PORT => {println!("PORT")},
                 Action::STARBOARD => {println!("STARBOARD")},
                 Action::SLOWER => {println!("SLOWER")},
