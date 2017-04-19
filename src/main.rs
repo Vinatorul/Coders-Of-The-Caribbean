@@ -28,7 +28,7 @@ enum Action {
     MINE,
 }
 
-#[derive(PartialEq, Eq, Clone, Copy, Hash)]
+#[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]
 struct Point {
     x: i32,
     y: i32,
@@ -122,15 +122,9 @@ impl Point {
             },
             _ => unimplemented!(),
         };
-        if point.x < 0 {
-            point.x = 0;
-        } else if point.x > 22 {
-            point.x = 22;
-        }
-        if point.y < 0 {
-            point.y = 0;
-        } else if point.y > 20 {
-            point.y = 20;
+        if (point.x < 0) || (point.x > 22) || (point.y < 0) || (point.y > 20) {
+            point.x = self.x;
+            point.y = self.y;
         }
         point 
     }
@@ -283,7 +277,7 @@ impl Ship {
                     }
                 }
             }
-            if (min_distance == 1000) {
+            if min_distance == 1000 {
                 action = Action::SLOWER;
             }
         } else {
@@ -520,25 +514,44 @@ impl Game {
                             action = Action::FIRE(mine.point.x, mine.point.y)
                         }   
                     }
-                } 
-                if (action == Action::WAIT) && self.under_fire.contains(&ship.point) && (ship.speed == 0) {
+                }
+                let neigh = ship.point.get_neighbour(ship.rotation);
+                let back = ship.point.get_neighbour((ship.rotation + 3)%6);
+                if (action == Action::WAIT) && (neigh != ship.point) && self.under_fire.contains(&ship.point) && (ship.speed == 0) {
                     action = Action::FASTER;
+                }
+                if (ship.speed == 0) && (neigh != ship.point) && self.under_fire.contains(&neigh) {
+                    action = Action::PORT;
+                }
+                if (ship.speed == 0) && (back != ship.point) && self.under_fire.contains(&back) {
+                    action = Action::FASTER;
+                }
+                if (ship.speed != 0) && (neigh != ship.point) && self.under_fire.contains(&neigh) {
+                    action = Action::SLOWER;
                 }
                 if (action == Action::WAIT) && (barrel_id >= 0) {
                     let barel = self.barrels.get(&barrel_id).unwrap();
                     print_err!("MOVE HEAL {} {}", barel.point.x, barel.point.y);
-                    action = ship.move_to(&barel.point, &self.under_fire);
+                    if (ship.speed == 0) && (ship.point.get_neighbour(ship.rotation) != ship.point) {
+                        action = Action::FASTER;
+                    } else {
+                        action = ship.move_to(&barel.point, &self.under_fire);
+                    }
                 }  
                 else if action == Action::WAIT {
                     print_err!("MOVE ATTACK {} {}", point.x, point.y);
-                    action = ship.move_to(&point, &self.under_fire);     
+                    if (ship.speed == 0) && (ship.point.get_neighbour(ship.rotation) != ship.point) {
+                        action = Action::FASTER;
+                    } else {
+                        action = ship.move_to(&point, &self.under_fire);     
+                    }
                 }
             }   
             match action {
                 Action::WAIT => {println!("WAIT")},
                 Action::PORT => {println!("PORT")},
                 Action::STARBOARD => {println!("STARBOARD")},
-                Action::SLOWER => {println!("WAIT")},
+                Action::SLOWER => {println!("SLOWER")},
                 Action::FASTER => {println!("FASTER")},
                 Action::FIRE(x, y) => {             
                     self.my_ships.get_mut(&key).unwrap().set_cd(2);
