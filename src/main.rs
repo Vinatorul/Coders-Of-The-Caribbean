@@ -3,6 +3,7 @@ use std::vec::Vec;
 use std::collections::{HashMap, HashSet};
 use std::f64;
 use std::f64::consts;
+use std::cmp;
 
 macro_rules! print_err {
     ($($arg:tt)*) => (
@@ -75,7 +76,9 @@ struct Game {
     mines: HashMap<i32, Mine>,
     cannonballs: HashMap<i32, Cannoball>,
     current_tick: i32,
-    under_fire: HashSet<Point>,
+    under_fire: HashMap<Point, i32>,
+    barrels_field: HashSet<Point>,
+    mine_field: HashSet<Point>,
 }
 
 impl Point {
@@ -213,102 +216,6 @@ impl Ship {
         self.cd = cd
     }
 
-    fn move_to(&self, point: &Point, under_fire: &HashSet<Point>) -> Action {
-        let mut action = Action::WAIT;
-        let target = *point;
-        if target == self.point {
-            return Action::SLOWER;
-        }
-
-        if self.speed > 0 {
-            let position = self.point.get_neighbour(self.rotation);
-            if position == self.point {
-                return Action::SLOWER;
-            }
-            if position == target {
-                return Action::WAIT;
-            }
-            let rotation = self.rotation as f64;
-            let target_angle = position.angle(&target);
-            let angle_straight = f64::min((rotation - target_angle).abs(), 6f64 - (rotation  - target_angle).abs());
-            let angle_port = f64::min(((rotation + 1f64) - target_angle).abs(), ((rotation - 5f64) - target_angle).abs());
-            let angle_starboard = f64::min(((rotation + 5f64) - target_angle).abs(), ((rotation - 1f64) - target_angle).abs());
-
-            let center_angle = position.angle(&Point {x:11, y:10});
-            let angle_port_center = f64::min(((rotation + 1f64) - center_angle).abs(), ((rotation - 5f64) - center_angle).abs());
-            let angle_starboard_center = f64::min(((rotation + 5f64) - center_angle).abs(), ((rotation - 1f64) - center_angle).abs());
-
-            print_err!("angles {} {} {} {}", target_angle, angle_straight, angle_port, angle_starboard);
-            if (position.distance(&target) == 1) && (angle_straight > 1.5f64) {
-                return Action::SLOWER;
-            }
-
-            let mut min_distance = 1000;
-            {
-                let next_position = position.get_neighbour(self.rotation);
-                if (next_position != position) && (!under_fire.contains(&next_position)) {
-                    min_distance = next_position.distance(&target);
-                    action = Action::WAIT;
-                }
-            }
-            {
-                let next_position = position.get_neighbour((self.rotation + 1) % 6);
-                if (next_position != position) && (!under_fire.contains(&next_position)) {
-                    let distance = next_position.distance(&target);
-                    if (distance < min_distance) || (distance == min_distance) && (angle_port <= angle_straight) {
-                        min_distance = distance;
-                        action = Action::PORT;
-                    }
-                }
-            }
-            {
-                let next_position = position.get_neighbour((self.rotation + 5) % 6);
-                if (next_position != position) && (!under_fire.contains(&next_position)) {
-                    let distance = next_position.distance(&target);
-                    if (distance <= min_distance)
-                        || ((distance == min_distance) && (angle_starboard <= angle_port) && (action == Action::PORT))
-                        || ((distance == min_distance) && (angle_starboard <= angle_straight) && (action == Action::WAIT))
-                        || ((distance == min_distance) && (action == Action::PORT) && (angle_starboard == angle_port)
-                            && (angle_starboard_center < angle_port_center))
-                        || ((distance == min_distance) && (action == Action::PORT) && (angle_starboard == angle_port)
-                            && (angle_starboard_center == angle_port_center) && (self.rotation == 1 || self.rotation == 4)) {
-                        action = Action::STARBOARD;
-                        min_distance = distance;
-                    }
-                }
-            }
-            if min_distance == 1000 {
-                action = Action::SLOWER;
-            }
-        } else {
-            let rotation = self.rotation as f64;
-            let target_angle = self.point.angle(&target);
-            let angle_straight = f64::min((rotation - target_angle).abs(), 6f64 - (rotation  - target_angle).abs());
-            let angle_port = f64::min(((rotation + 1f64) - target_angle).abs(), ((rotation - 5f64) - target_angle).abs());
-            let angle_starboard = f64::min(((rotation + 5f64) - target_angle).abs(), ((rotation - 1f64) - target_angle).abs());
-
-            let center_angle = self.point.angle(&Point {x:11, y:10});
-            let angle_port_center = f64::min(((rotation + 1f64) - center_angle).abs(), ((rotation - 5f64) - center_angle).abs());
-            let angle_starboard_center = f64::min(((rotation + 5f64) - center_angle).abs(), ((rotation - 1f64) - center_angle).abs());
-
-            let forward_position = self.point.get_neighbour(self.rotation);
-
-            if angle_port <= angle_starboard {
-                action = Action::PORT;
-            }
-
-            if (angle_starboard < angle_port) || ((angle_starboard == angle_port) && (angle_starboard_center < angle_port_center))
-                    || ((angle_starboard == angle_port) && (angle_starboard_center == angle_port_center) && (self.rotation == 1 || self.rotation == 4)) {
-                action = Action::STARBOARD;
-            }
-
-            if (forward_position != self.point) && (angle_straight <= angle_port) && (angle_straight <= angle_starboard) {
-                action = Action::FASTER;
-            }
-        }
-        action
-    }
-
     fn is_alive(&self, current_tick: i32) -> bool {
         current_tick == self.tick_accessed
     }
@@ -377,6 +284,136 @@ impl Cannoball {
 }
 
 impl Game {
+    fn check_position(&self, point: &Point, rotation: i32, speed: i32, depth: i32) -> i32 {
+        let nose = point.get_neighbour(rotation);
+        let stern = point.get_neighbour((rotation + 3)%6);
+        let mut value = 0;
+        if self.barrels_field.contains(&stern) {
+            value = value + 5;
+        }
+        if self.barrels_field.contains(point) {
+            value = value + 5;
+        }
+        if self.barrels_field.contains(&nose) {
+            value = value + 5;
+        }
+        if self.mine_field.contains(&stern)  {
+            value = value - 15;
+        }
+        if self.mine_field.contains(point) {
+            value = value - 15;
+        }
+        if self.mine_field.contains(&nose) {
+            value = value - 15;
+        }
+        if self.under_fire.contains_key(&stern) && (*self.under_fire.get(&stern).unwrap() == depth) {
+            value = value - 25;
+        }
+        if self.under_fire.contains_key(point) && (*self.under_fire.get(point).unwrap() <= depth+1)  {
+            value = value - 50;
+        }
+        if self.under_fire.contains_key(&nose) && (*self.under_fire.get(&nose).unwrap() == depth)  {
+            value = value - 25;
+        }
+        value
+    }
+
+    fn move_recur(&self, dest: &Point, point: &Point, mut rotation: i32, mut speed: i32, action: Action, depth: i32) -> i32 {
+        let mut t_point = *point;
+        let d = point.distance(&dest);
+        let angle = point.angle(&dest);
+        let angle_straight = f64::min((rotation as f64 - angle).abs(), 6f64 - (rotation as f64  - angle).abs());
+        match action {
+            Action::WAIT => {
+                for _ in 0..speed {
+                    t_point = t_point.get_neighbour(rotation);
+                }
+            },
+            Action::PORT => {
+                for _ in 0..speed {
+                    t_point = t_point.get_neighbour(rotation);
+                }
+            },
+            Action::STARBOARD => {
+                for _ in 0..speed {
+                    t_point = t_point.get_neighbour(rotation);
+                }
+                
+            },
+            Action::SLOWER => {
+                if speed > 0 {
+                    speed = speed - 1
+                }
+                for _ in 0..speed {
+                    t_point = t_point.get_neighbour(rotation);
+                }
+            },
+            Action::FASTER => {
+                if speed < 2 {
+                    speed = speed + 1
+                }
+                for _ in 0..speed {
+                    t_point = t_point.get_neighbour(rotation);
+                }
+            },
+            _ => unimplemented!(),
+        }
+        let mut value = self.check_position(&t_point, rotation, speed, depth);
+        if action == Action::STARBOARD {
+            rotation = (rotation + 5)%6;
+            value = value + self.check_position(&t_point, rotation, speed, depth);
+        }
+        if action == Action::PORT {
+            rotation = (rotation + 1)%6;
+            value = value + self.check_position(&t_point, rotation, speed, depth);
+        }
+        let d_new = t_point.distance(&dest);
+        let angle_new = t_point.angle(&dest);
+        let angle_straighte_new = f64::min((rotation as f64 - angle_new).abs(), 6f64 - (rotation as f64  - angle_new).abs());
+        if d_new < d {
+            value = value + 1;
+        }
+        if angle_straighte_new < angle_straight {
+            value = value + 1;
+        }
+        if depth < 3 {
+            let mut m_val = self.move_recur(dest, &t_point, rotation, speed, Action::WAIT, depth+1)/2;
+            m_val = cmp::max(m_val, self.move_recur(dest, &t_point, rotation, speed, Action::PORT, depth+1)/2);  
+            m_val = cmp::max(m_val, self.move_recur(dest, &t_point, rotation, speed, Action::STARBOARD, depth+1)/2);
+            m_val = cmp::max(m_val, self.move_recur(dest, &t_point, rotation, speed, Action::FASTER, depth+1)/2);
+            m_val = cmp::max(m_val, self.move_recur(dest, &t_point, rotation, speed, Action::SLOWER, depth+1)/2);
+            value = value + m_val;
+        }
+        value
+    }
+
+    fn move_to(&self, dest: &Point, point: &Point, rotation: i32, speed: i32) -> Action {
+        let mut value = self.move_recur(dest, point, rotation, speed, Action::WAIT, 1);
+        let mut result = Action::WAIT;
+        let t_val1 = self.move_recur(dest, point, rotation, speed, Action::PORT, 1);
+        if t_val1 >= value {
+            value = t_val1;
+            result = Action::PORT; 
+        }
+        let t_val2 = self.move_recur(dest, point, rotation, speed, Action::STARBOARD, 1);
+        if t_val2 >= value {
+            value = t_val2;
+            result = Action::STARBOARD; 
+        }
+        let t_val3 = self.move_recur(dest, point, rotation, speed, Action::FASTER, 1);
+        if (t_val3 >= value) && (speed < 2) {
+            value = t_val3;
+            result = Action::FASTER; 
+        }
+        let t_val4 = self.move_recur(dest, point, rotation, speed, Action::SLOWER, 1);
+        if (t_val4 >= value) && (speed > 0) {
+            value = t_val4;
+            result = Action::SLOWER; 
+        }
+        print_err!("{} {} {} {} {}", value, t_val1, t_val2, t_val3, t_val4);
+        result
+    }
+
     fn init(&mut self) {
         self.current_tick = 0;
         let mut input_line = String::new();
@@ -425,19 +462,28 @@ impl Game {
 
     fn calc_under_fire(&mut self) {
         self.under_fire.clear();
+        self.barrels_field.clear();
+        self.mine_field.clear();
         for cannonball in self.cannonballs.values() {
             if !cannonball.is_alive(self.current_tick) {
                 continue;
             }
-            self.under_fire.insert(cannonball.target);
+            self.under_fire.insert(cannonball.target, cannonball.impact_time);
         }
         for mine in self.mines.values_mut() {
             if !mine.is_alive(self.current_tick) {
                 continue;
             }
-            if self.under_fire.contains(&mine.point) {
+            if self.under_fire.contains_key(&mine.point) {
                 mine.set_under_fire();
             }
+            self.mine_field.insert(mine.point);
+        }
+        for barrel in self.barrels.values() {
+            if !barrel.is_alive(self.current_tick) {
+                continue;
+            }
+            self.barrels_field.insert(barrel.point);
         }
     }
 
@@ -476,6 +522,30 @@ impl Game {
         enemy_id
     }
 
+    fn get_waypoint(ship: &Point) -> Point {
+        let mut max_distance = ship.distance(&Point::new(2, 2));
+        let mut max_distance_point = Point::new(2, 2);
+        let mut p = Point::new(20, 2);
+        let mut d = ship.distance(&p );
+        if (d > max_distance) {
+            max_distance = d;
+            max_distance_point = p;
+        }
+        p = Point::new(2, 18);
+        d = ship.distance(&p);
+        if (d > max_distance) {
+            max_distance = d;
+            max_distance_point = p;
+        }
+        p = Point::new(20, 18);
+        d = ship.distance(&p);
+        if (d > max_distance) {
+            max_distance = d;
+            max_distance_point = p;
+        }
+        max_distance_point
+    }
+
     fn do_next_turn(&mut self){
         for key in self.my_ships_ids.iter() {
             let mut action = Action::WAIT;
@@ -503,48 +573,20 @@ impl Game {
                 let enemy_ship = self.enemy_ships.get(&enemy_id).unwrap();
                 let offset = if enemy_ship.speed == 0 {0} else {1 + (enemy_d) / 3};
                 let point = enemy_ship.point.get_offset(enemy_ship.rotation, offset);
-                if ship.cd == 0 {
+                if (action == Action::WAIT) && (ship.cd == 0) {
                     let distance = ship.point.distance(&point);
-                    if distance < 8  {
+                    if distance < 4  {
                         action = Action::FIRE(point.x, point.y);
-                    } else if mine_id > 0  {
-                        let mine = self.mines.get(&mine_id).unwrap();
-                        let mine_d = ship.point.distance(&mine.point);
-                        if (mine_d < 6) && (mine_d > 2) {
-                            action = Action::FIRE(mine.point.x, mine.point.y)
-                        }   
                     }
-                }
-                let neigh = ship.point.get_neighbour(ship.rotation);
-                let back = ship.point.get_neighbour((ship.rotation + 3)%6);
-                if (action == Action::WAIT) && (neigh != ship.point) && self.under_fire.contains(&ship.point) && (ship.speed == 0) {
-                    action = Action::FASTER;
-                }
-                if (ship.speed == 0) && (neigh != ship.point) && self.under_fire.contains(&neigh) {
-                    action = Action::PORT;
-                }
-                if (ship.speed == 0) && (back != ship.point) && self.under_fire.contains(&back) {
-                    action = Action::FASTER;
-                }
-                if (ship.speed != 0) && (neigh != ship.point) && self.under_fire.contains(&neigh) {
-                    action = Action::SLOWER;
                 }
                 if (action == Action::WAIT) && (barrel_id >= 0) {
                     let barel = self.barrels.get(&barrel_id).unwrap();
                     print_err!("MOVE HEAL {} {}", barel.point.x, barel.point.y);
-                    if (ship.speed == 0) && (ship.point.get_neighbour(ship.rotation) != ship.point) {
-                        action = Action::FASTER;
-                    } else {
-                        action = ship.move_to(&barel.point, &self.under_fire);
-                    }
-                }  
-                else if action == Action::WAIT {
-                    print_err!("MOVE ATTACK {} {}", point.x, point.y);
-                    if (ship.speed == 0) && (ship.point.get_neighbour(ship.rotation) != ship.point) {
-                        action = Action::FASTER;
-                    } else {
-                        action = ship.move_to(&point, &self.under_fire);     
-                    }
+                    action = self.move_to(&barel.point, &ship.point, ship.rotation, ship.speed);
+                } else if action == Action::WAIT {
+                    let p_t = Game::get_waypoint(&ship.point);
+                    print_err!("MOVE AWAY {} {}", p_t.x, p_t.y);
+                    action = self.move_to(&p_t, &ship.point, ship.rotation, ship.speed);     
                 }
             }   
             match action {
