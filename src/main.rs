@@ -309,13 +309,13 @@ impl Game {
         if self.mine_field.contains(&nose) {
             value = value - 25;
         }
-        if self.under_fire.contains_key(&stern) /*&& (*self.under_fire.get(&stern).unwrap() == depth)*/ {
+        if self.under_fire.contains_key(&stern) && (*self.under_fire.get(&stern).unwrap() == depth-1) {
             value = value - 25;
         }
-        if self.under_fire.contains_key(point) /*&& (*self.under_fire.get(point).unwrap() <= depth+1)*/  {
+        if self.under_fire.contains_key(point) && (*self.under_fire.get(point).unwrap() == depth-1)  {
             value = value - 50;
         }
-        if self.under_fire.contains_key(&nose)/* && (*self.under_fire.get(&nose).unwrap() == depth)*/  {
+        if self.under_fire.contains_key(&nose) && (*self.under_fire.get(&nose).unwrap() == depth-1)  {
             value = value - 25;
         }
         value
@@ -323,6 +323,7 @@ impl Game {
 
     fn check_collision(&self, point: &Point, rotation: i32, ship_id: i32) -> bool {
         let nose = point.get_neighbour(rotation);
+        let stern = point.get_neighbour(rotation);
         for ship in self.my_ships.values() {
             if !ship.is_alive(self.current_tick) {
                 continue;
@@ -330,20 +331,50 @@ impl Game {
             if ship.entity_id == ship_id {
                 continue;
             }
-            let sp_nose = ship.point.get_neighbour(rotation);
-            let sp_stern = ship.point.get_neighbour((rotation + 3)%6);
-            if (ship.point == nose) || (sp_nose == nose) || (sp_stern == nose) {
-                return true;
+            let mut st = ship.point;
+            if ship.speed == 0 {
+                let sp_nose = st.get_neighbour(ship.rotation);
+                let sp_stern = st.get_neighbour((ship.rotation + 3)%6);
+                let sp_next = sp_nose.get_neighbour(ship.rotation);
+                if (st == nose) || (sp_nose == nose) || (sp_stern == nose) || (sp_next == nose) ||
+                    (st== stern) || (sp_nose == stern) || (sp_stern == stern) || (sp_next == stern) {
+                    return true;
+                }
+            }
+            for _ in 0..ship.speed {
+                st = st.get_neighbour(ship.rotation);
+                let sp_nose = st.get_neighbour(ship.rotation);
+                let sp_stern = st.get_neighbour((ship.rotation + 3)%6);
+                let sp_next = sp_nose.get_neighbour(ship.rotation);
+                if (st == nose) || (sp_nose == nose) || (sp_stern == nose) || (sp_next == nose) ||
+                    (st== stern) || (sp_nose == stern) || (sp_stern == stern) || (sp_next == stern) {
+                    return true;
+                }
             }
         }
         for ship in self.enemy_ships.values() {
             if !ship.is_alive(self.current_tick) {
                 continue;
             }
-            let sp_nose = ship.point.get_neighbour(ship.rotation);
-            let sp_stern = ship.point.get_neighbour((ship.rotation + 3)%6);
-            if (ship.point == nose) || (sp_nose == nose) || (sp_stern == nose) {
-                return true;
+            let mut st = ship.point;
+            if ship.speed == 0 {
+                let sp_nose = st.get_neighbour(ship.rotation);
+                let sp_stern = st.get_neighbour((ship.rotation + 3)%6);
+                let sp_next = sp_nose.get_neighbour(ship.rotation);
+                if (st == nose) || (sp_nose == nose) || (sp_stern == nose) || (sp_next == nose) ||
+                    (st== stern) || (sp_nose == stern) || (sp_stern == stern) || (sp_next == stern) {
+                    return true;
+                }
+            }
+            for _ in 0..ship.speed {
+                st = st.get_neighbour(ship.rotation);
+                let sp_nose = st.get_neighbour(ship.rotation);
+                let sp_stern = st.get_neighbour((ship.rotation + 3)%6);
+                let sp_next = sp_nose.get_neighbour(ship.rotation);
+                if (st == nose) || (sp_nose == nose) || (sp_stern == nose) || (sp_next == nose) ||
+                    (st== stern) || (sp_nose == stern) || (sp_stern == stern) || (sp_next == stern) {
+                    return true;
+                }
             }
         }
         false
@@ -439,20 +470,37 @@ impl Game {
         if d_new < d {
             value = value + 1;
         }
+        if (t_point.x <= 1) && ((rotation == 3) || (rotation == 2) || (rotation == 4)) {
+           value = value - 1; 
+        }
+        
+        if (t_point.y <= 1) && ((rotation == 1) || (rotation == 2)) {
+           value = value - 1; 
+        }
+        
+        if (t_point.x >= 21) && ((rotation == 0) || (rotation == 1) || (rotation == 5)) {
+            value = value - 1;
+        }
+        if (t_point.y >= 19 ) && ((rotation == 4) || (rotation == 5)) {
+            value = value - 1;
+        }
         if angle_straighte_new < angle_straight {
             value = value + 1;
         }
+        if speed == 0 {
+            value = value - 1;
+        }
         if depth < 3 {
             let (t_val, _) = self.move_recur(dest, &t_point, rotation, speed, Action::WAIT, depth+1, ship_id);
-            let mut m_val = t_val/2;
+            let mut m_val = 2*t_val/3;
             let (t_val, _) = self.move_recur(dest, &t_point, rotation, speed, Action::PORT, depth+1, ship_id);
-            m_val = cmp::max(m_val, t_val/2);
+            m_val = cmp::max(m_val, 2*t_val/3);
             let (t_val, _) = self.move_recur(dest, &t_point, rotation, speed, Action::STARBOARD, depth+1, ship_id);
-            m_val = cmp::max(m_val, t_val/2);
+            m_val = cmp::max(m_val, 2*t_val/3);
             let (t_val, _) = self.move_recur(dest, &t_point, rotation, speed, Action::FASTER, depth+1, ship_id);
-            m_val = cmp::max(m_val, t_val/2);
+            m_val = cmp::max(m_val, 2*t_val/3);
             let (t_val, _) = self.move_recur(dest, &t_point, rotation, speed, Action::SLOWER, depth+1, ship_id);
-            m_val = cmp::max(m_val, t_val/2);
+            m_val = cmp::max(m_val, 2*t_val/3);
             value = value + m_val;
         }
         (value, false)
@@ -460,6 +508,9 @@ impl Game {
 
     fn move_to(&self, dest: &Point, point: &Point, rotation: i32, speed: i32, ship_id: i32) -> Action {
         let (mut value, _) = self.move_recur(dest, point, rotation, speed, Action::WAIT, 1, ship_id);
+        if (speed > 0) {
+            value = value + 1;
+        }
         let mut result = Action::WAIT;
         let (t_val1, t_coll) = self.move_recur(dest, point, rotation, speed, Action::PORT, 1, ship_id);
         if (t_val1 >= value) && (!t_coll) {
@@ -579,16 +630,18 @@ impl Game {
 
     fn get_target(&self, ship: &Ship) -> i32 {  
         let nose = ship.point.get_neighbour(ship.rotation);
+        let next_to = nose.get_neighbour(ship.rotation);
         let stern = ship.point.get_neighbour((ship.rotation + 3)%6); 
         for enemy_ship in self.enemy_ships.values() {
             if !enemy_ship.is_alive(self.current_tick) {
                 continue;
             }
             let mut t_pos = enemy_ship.point; 
-            for _ in 0..enemy_ship.speed {
+            let t = cmp::max(1, enemy_ship.speed);
+            for _ in 0..t {
                 t_pos = t_pos.get_neighbour(enemy_ship.rotation);
                 let sp_nose = t_pos.get_neighbour(enemy_ship.rotation);
-                if (sp_nose == ship.point) || (sp_nose == nose) || (sp_nose == stern) {
+                if (sp_nose == ship.point) || (sp_nose == nose) || (sp_nose == stern) || (next_to == sp_nose) {
                     return enemy_ship.entity_id;
                 }
             }
@@ -613,10 +666,10 @@ impl Game {
     }
 
     fn get_waypoint(ship: &Ship) -> (Point, usize) {
-        let waypoints = vec![Point::new(2,2), Point::new(20, 2), Point::new(2, 18), Point::new(20, 18)];
+        let waypoints = vec![Point::new(3,3), Point::new(19, 3), Point::new(3, 17), Point::new(19, 17)];
         let d = ship.point.distance(&waypoints[ship.wp_ind]);
         let mut wp_ind = ship.wp_ind;
-        if d < 2 {
+        if d < 3 {
             wp_ind = (ship.wp_ind + 1)%4;
         }
         (waypoints[wp_ind], wp_ind)
@@ -644,13 +697,13 @@ impl Game {
                     }
                 }
                 
-                if (action == Action::WAIT) && (ship.cd == 0) {
+                if (ship.rum > 50) && (action == Action::WAIT) && (ship.cd == 0) {
                     let enemy_id = self.get_target(&ship);
                     if enemy_id > 0 {
                         let enemy_ship = self.enemy_ships.get(&enemy_id).unwrap();
                         action = Action::FIRE(enemy_ship.point.x, enemy_ship.point.y);
                     }
-                } 
+                }
                 if (action == Action::WAIT) && (barrel_id >= 0) {
                     let barel = self.barrels.get(&barrel_id).unwrap();
                     print_err!("MOVE HEAL {} {}", barel.point.x, barel.point.y);
@@ -666,10 +719,13 @@ impl Game {
                     let enemy_d = ship.point.distance(&ship.point);
                     
                     let enemy_ship = self.enemy_ships.get(&enemy_id).unwrap();
-                    let offset = if enemy_ship.speed == 0 {0} else {1 + (enemy_d) / 3};
-                    let point = enemy_ship.point.get_offset(enemy_ship.rotation, offset);
+                    let offset = if enemy_ship.speed == 0 {0} else {enemy_ship.speed + (enemy_d) / 3};
+                    let mut point = enemy_ship.point;
+                    for i in 0..offset {
+                        point = point.get_neighbour(enemy_ship.rotation);
+                    }
                     let distance = ship.point.distance(&point);
-                    if distance < 4  {
+                    if distance < 6  {
                         action = Action::FIRE(point.x, point.y);
                     }
                 }
